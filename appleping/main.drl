@@ -1,0 +1,136 @@
+# ---- Gripper helpers --------------------------------------------------------
+CLOSE_PIN = 1
+OPEN_PIN  = 2
+
+def grip():
+    set_tool_digital_output(-OPEN_PIN)
+    wait(0.02)
+    set_tool_digital_output(CLOSE_PIN)
+
+def ungrip():
+    set_tool_digital_output(-CLOSE_PIN)
+    wait(0.02)
+    set_tool_digital_output(OPEN_PIN)
+
+
+# ---- Motion helpers ---------------------------------------------------------
+def global_speed(j_vel, j_acc, x_vel, x_acc):
+    set_velj(j_vel)
+    set_accj(j_acc)
+    set_velx(x_vel)
+    set_accx(x_acc)
+
+def move_h():
+    movej(posj(90, 0, 0, 0, 0, 0))   # 홈 포즈 (Joint)
+
+
+# ---- Waypoints (renumbered in move order) -----------------------------------
+
+WP1  = posj(86.71, -7.26, -90.41, 259.59, 88.63, -39.77)          # 사과 Pick 접근(J)
+WP2  = posx(253.22, -348.17, 119.34, 178.35, -90.2, -88.94)       # 세부조정1(X)
+WP3  = posx(309.87, -351.70, 133.57, 178.83, -87.50, -88.46)      # 세부조정2(X)
+WP4  = posx(309.94, -351.50, 137.70, 178.87, -87.24, -88.62)      # 세부조정3(X)
+WP5  = posx(302.20, -350.00, 155.55, 178.52, -85.38, -88.78)      # 집은 후 후퇴(X)
+
+WP6  = posx(176.44, -13.01, 771.61, 172.14, -125.63, 126.57)      # 초콜릿 탕 경유(X)
+WP7  = posx(538.85, 121.60, 553.37, 16.42, 179.81, -178.77)       # 초콜릿 위 정렬(X)
+
+WP8  = posj(193.36, -29.33, -43.77, 180.30, 106.75, -90.00)       # 흔들기 경유점1(J)
+WP9  = posj(193.36, -29.33, -43.77, 180.30, 106.75, -181.74)      # 흔들기 경유점2(J)
+
+WP10 = posx(226.99, 59.47, 600.93, 9.02, 131.16, 89.66)           # 흔들기 1
+WP11 = posx(198.84, 45.86, 583.51, 12.09, 99.51, 90.27)           # 흔들기 
+WP10_1 =  posj(200.74, 25.85, -87.33, 170.67, 70.52, -77)           # 흔들기 2
+WP11_1 =  posj(198.65, 38.13, -104.9, 168.18, 33.33, -77)          # 흔들기
+
+WP12 = posx(104.52, 129.65, 791.36, 50.77, 93.17, 94.73)          # 스프링클 경유(X)
+WP13 = posj(266.92, -12.00, -55.64, 180.11, 111.52, -190.05)      # 스프링클조인트 경유(J)
+WP14 = posx(29.31, 430.56, 400.21, 87.11, 179.10, 170.16)         # 스프링클 위 정렬(X)
+WP15 = posx(28.75, 426.47, 518.59, 86.82, 178.95, 169.84)         # 스프링클 dip 완료(X)
+WP16 = posx(-327.49, 221.02, 384.92, 126.57, 82.26, 91.82)        # 고객 전달(X)
+
+
+# ---- Job sequence -----------------------------------------------------------
+def make():
+    # 준비
+    ungrip()
+    global_speed(140, 70, 140, 70)
+    move_h()
+    wait(1)
+
+    # 1) 사과 Pick
+    movej(WP1)
+    movel(WP2)
+    movel(WP3)
+    movel(WP4)
+    grip()
+    wait(1)
+    movel(WP5)
+
+    # 2) 초콜릿 탕 이동 & dip
+    movel(WP6)
+    movel(WP7)
+
+    task_compliance_ctrl([300,300,300,200,200,200])
+    amovel([0, 0, -100, 0, 0, 0], t=5, mod=1)   # 천천히 하강(상대)
+    while True:
+        if check_force_condition(axis=2, min=5) == 1:
+            stop(1)
+            break
+        wait(0.05)
+    release_compliance_ctrl()
+    movel([0, 0, 10, 0, 0, 0], mod=1)          # 살짝 상승(상대)
+
+    # 3) 흔들기
+    movej(WP8)
+    movej(WP9)
+    movel(WP10)
+
+    global_speed(170, 100, 170, 100)
+    for _ in range(4):
+        movel(WP10)        
+        movel(WP11)
+    for _ in range(4):
+        movej(WP10_1)     
+        movej(WP11_1)
+    wait(8)
+    movel(WP11)
+
+    # 4) 스프링클
+    global_speed(100, 50, 100, 50)
+    movel(WP12)
+    movej(WP13)
+    movel(WP14)
+
+    task_compliance_ctrl([300,300,300,200,200,200])
+    amovel([0, 0, -100, 0, 0, 0], t=8, mod=1)   # 수직 하강(상대)
+    while True:
+        if check_force_condition(axis=2, min=5) == 1:
+            stop(1)
+            break
+        wait(0.05)
+    release_compliance_ctrl()
+
+    movel(WP15)
+    movel(WP16)
+
+    # 5) 고객 전달(접촉 감지 대기)
+    task_compliance_ctrl([300,300,300,200,200,200])
+    while True:
+        if check_force_condition(axis=2, min=8) == 1:
+            stop(2)
+            break
+        wait(0.05)
+    release_compliance_ctrl()
+
+    ungrip()
+    wait(3)
+
+    # 6) 복귀
+    global_speed(80, 50, 80, 50)
+    move_h()
+
+
+# ---- Run --------------------------------------------------------------------
+while True:
+    make()
